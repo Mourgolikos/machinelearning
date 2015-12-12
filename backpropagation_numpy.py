@@ -25,12 +25,19 @@ __author__      = "Panagiotis Thomaidis"
 from math import exp
 from random import random
 
+import numpy as np
+
 # activation functions
 linear  = lambda x: x
 binary  = lambda x: 1 if (x>=0) else 0
 rectif  = lambda x: x if (x>=0) else 0
 sigmoid = lambda x: 1/(1 + exp(-x))
+sigmoidderiv = lambda y: y*(1-y)
 stoch   = lambda x: 1 if ((1/(1 + exp(-x)))>random()) else 0
+
+# Vectorised functions can be applied to whole vectors (function is applied element-wise)
+vecsigmoid = np.vectorize(sigmoid)
+vecsigmoidderiv = np.vectorize(sigmoidderiv)
 
 class Layer:
     """Implementation of a layer of neurons
@@ -40,6 +47,8 @@ class Layer:
         ny:     the number of output neurons
         w[][]:  the weight of the layer
         b[]:    the bias terms of the output neurons
+        dw[][]: the calculated weight change
+        db[]:   the calculated bias change
         x[]:    the latest input vector
         y[]:    the latest output vector
         ex[]:   the latest output error vector
@@ -55,14 +64,16 @@ class Layer:
             outno: the number of output neurons
             
         """
-        self.nx = inno    # number of inputs
-        self.ny = outno  # number of outputs
-        self.w = [[random()*2-1 for j in range(self.ny)] for i in range(self.nx)]    # weights 
-        self.b = [random()*2-1 for j in range(self.ny)]  # bias terms
-        self.x = [0]*self.nx # last input vector
-        self.y = [0]*self.ny # last output vector
-        self.ex = [0]*self.nx # last error at input
-        self.ey = [0]*self.ny # last error at output
+        self.nx = inno      # number of inputs
+        self.ny = outno     # number of outputs
+        self.w = np.random.random((self.nx, self.ny))*2 - 1     # weights between -1 and 1
+        self.dw = np.zeros((self.nx, self.ny))                  # weight updates
+        self.b = np.matrix([random()*2-1 for j in range(self.ny)])  # bias terms
+        self.db = np.matrix([0.0 for j in range(self.ny)])  # bias terms
+        self.x = np.zeros(self.nx)      # last input vector
+        self.y = np.zeros(self.ny)      # last output vector
+        self.ex = np.zeros(self.nx)     # last error at input
+        self.ey = np.zeros(self.ny)     # last error at output
 
     def ff(self, input):
         """Feedforward pass
@@ -74,11 +85,7 @@ class Layer:
             
         """
         self.x = input
-        for j in range(self.ny):
-            self.y[j] = self.b[j]
-            for i in range(self.nx):
-                self.y[j] += self.x[i]*self.w[i][j]
-            self.y[j] = sigmoid(self.y[j])
+        self.y = vecsigmoid(self.x*self.w + self.b)
         return self.y
 
     def bp(self, error):
@@ -91,13 +98,12 @@ class Layer:
             
         """
         self.ey = error
-        self.ex = [0]*self.nx
-        for j in range(self.ny):
-            dy = self.y[j]*(1-self.y[j])    # derivative of sigmoid: y*(1-y)
-            for i in range(self.nx):
-                self.ex[i] += self.ey[j]*self.w[i][j]            # calculate back propagated error
-                self.w[i][j] += self.x[i]*dy*self.ey[j]*0.1      # calculate the updated weights
-            self.b[j] += dy*self.ey[j]*0.1                       # and bias
+        dEdz = np.multiply( vecsigmoidderiv(self.y), self.ey)
+        self.ex = np.transpose(self.w*np.transpose(dEdz))
+        self.dw = np.outer(self.x, dEdz)
+        self.w += self.dw                           # weight update
+        self.db = dEdz                                                
+        self.b += self.db                           # bias update
         return self.ex
     
 class Network:
@@ -150,37 +156,39 @@ class Network:
             
 if __name__ == "__main__":
     
-    # labels and vectors
-    ls = [[0], [1], [1], [0]]
-    vs = [[0, 0], [0, 1], [1, 0], [1, 1]]
+    # targets and vectors
+    targets = np.mat([[0], [1], [1], [0]])
+    vectors = np.mat([[0, 0], [0, 1], [1, 0], [1, 1]])
     
     # Using the Layers
     print("=== Layers ===")
     l1 = Layer(2, 3)
     l2 = Layer(3, 1)
 
-    for k in range(10000):
-        for i in range(len(ls)):
-            out = l1.ff(vs[i])
+    for k in range(2000):
+        for i in range(len(vectors)):
+            out = l1.ff(vectors[i])
             out2 = l2.ff(out)
-            diff = [ls[i][j]-out2[j] for j in range(len(out2))]
+            diff = targets[i] - out2     # Error derivative: -(target - output)
             err2 = l2.bp(diff)
             err = l1.bp(err2)
             
-    for i in range(len(ls)):
-        out = l1.ff(vs[i])
+    # Print the network outputs after training
+    for i in range(len(vectors)):
+        out = l1.ff(vectors[i])
         out2 = l2.ff(out)
         print(out2)
     
     # Using the Network
     print("=== Network ===")
     n1 = Network([2, 3, 1])
-    for k in range(10000):
-        for i in range(len(ls)):
-            out = n1.ff(vs[i])
-            diff = [ls[i][j]-out[j] for j in range(len(out))]
+    for k in range(2000):
+        for i in range(len(vectors)):
+            out = n1.ff(vectors[i])
+            diff = targets[i] - out
             err = n1.bp(diff)
 
-    for i in range(len(ls)):
-        out = n1.ff(vs[i])
+    # Print the network outputs after training            
+    for i in range(len(vectors)):
+        out = n1.ff(vectors[i])
         print(out)
